@@ -28,11 +28,6 @@ build:
 	go-bindata include
 	mkdir -p build/linux  && GOOS=linux  go build -a -ldflags "-X main.Version=$(VERSION)" -o build/linux/$(NAME)
 	mkdir -p build/darwin && GOOS=darwin go build -a -ldflags "-X main.Version=$(VERSION)" -o build/darwin/$(NAME)
-ifeq ($(CIRCLECI),true)
-	docker build -t $(IMAGE_NAME):$(BUILD_TAG) .
-else
-	docker build -f Dockerfile.dev -t $(IMAGE_NAME):$(BUILD_TAG) .
-endif
 
 build-in-docker:
 	docker build --rm -f Dockerfile.build -t $(NAME)-build .
@@ -49,9 +44,7 @@ clean:
 	docker rmi herokuish:dev || true
 
 deps:
-	docker pull heroku/heroku:16-build
 	go get -u github.com/jteeuwen/go-bindata/...
-	go get -u github.com/progrium/gh-release/...
 	go get -u github.com/progrium/basht/...
 	go get || true
 
