@@ -46,19 +46,12 @@ procfile-start() {
 }
 
 procfile-exec() {
-	declare desc="Run as unprivileged user with Heroku-like env"
-	[[ "$USER" ]] || detect-unprivileged
+	declare desc="Run command with a Heroku-like env"
 	procfile-setup-home
 	procfile-load-env
 	procfile-load-profile
 	cd "$app_path" || return 1
-	# unprivileged_user is defined in outer scope
-	# shellcheck disable=SC2154,SC2046
-	if [[ "$HEROKUISH_SETUIDGUID" == "false" ]]; then
-		exec $(eval echo "$@")
-	else
-		exec setuidgid "$unprivileged_user" $(eval echo "$@")
-	fi
+	exec $(eval echo "$@")
 }
 
 procfile-types() {
@@ -98,6 +91,13 @@ procfile-load-env() {
 }
 
 procfile-load-profile() {
+	# export the current session, which includes custom evars
+	# that were set when the container was started. - We don't
+	# want the buildpack to bulldoze those.
+	# (PATH is ok to bulldoze though)
+	env | grep -Ev 'PATH'
+		> /etc/default_profile.sh
+	
 	shopt -s nullglob
 	for file in /etc/profile.d/*.sh; do
 		# shellcheck disable=SC1090
@@ -108,14 +108,14 @@ procfile-load-profile() {
 		# shellcheck disable=SC1090
 		source "$file"
 	done
+	
+	# reset the default evars in case the buildpack bulldozed them
+	source /etc/default_profile.sh
+	
 	shopt -u nullglob
 	hash -r
 }
 
 procfile-setup-home() {
 	export HOME="$app_path"
-	usermod --home "$app_path" "$unprivileged_user" > /dev/null 2>&1
-	# unprivileged_user & unprivileged_group are defined in outer scope
-	# shellcheck disable=SC2154
-	find "$app_path" \( \! -user "$unprivileged_user" -o \! -group "$unprivileged_group" \) -print0 | xargs -0 -r chown "$unprivileged_user:$unprivileged_group"
 }

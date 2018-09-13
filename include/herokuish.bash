@@ -7,13 +7,9 @@ fi
 
 readonly app_path="${APP_PATH:-/app}"
 readonly env_path="${ENV_PATH:-/tmp/env}"
-readonly build_path="${BUILD_PATH:-/tmp/build}"
 readonly cache_path="${CACHE_PATH:-/tmp/cache}"
 readonly import_path="${IMPORT_PATH:-/tmp/app}"
 readonly buildpack_path="${BUILDPACK_PATH:-/tmp/buildpacks}"
-
-declare unprivileged_user="$USER"
-declare unprivileged_group="${USER/nobody/nogroup}"
 
 export PS1='\[\033[01;34m\]\w\[\033[00m\] \[\033[01;32m\]$ \[\033[00m\]'
 
@@ -21,7 +17,6 @@ ensure-paths() {
 	mkdir -p \
 		"$app_path" \
 		"$env_path" \
-		"$build_path" \
 		"$cache_path" \
 		"$buildpack_path"
 }
@@ -31,7 +26,6 @@ paths() {
 	printf "%-32s # %s\n" \
 		"APP_PATH=$app_path" 		"Application path during runtime" \
 		"ENV_PATH=$env_path" 		"Path to files for defining base environment" \
-		"BUILD_PATH=$build_path" 	"Working directory during builds" \
 		"CACHE_PATH=$cache_path" 	"Buildpack cache location" \
 		"IMPORT_PATH=$import_path" 	"Mounted path to copy to app path" \
 		"BUILDPACK_PATH=$buildpack_path" "Path to installed buildpacks"
@@ -57,36 +51,6 @@ indent() {
 			echo $'\e[1G      ' "$line"
 		fi
 	done
-}
-
-unprivileged() {
-	setuidgid "$unprivileged_user" "$@"
-}
-
-detect-unprivileged() {
-	unprivileged_user="$(stat -c %U "$app_path")"
-	unprivileged_group="${unprivileged_user/nobody/nogroup}"
-}
-
-randomize-unprivileged() {
-	local userid="$((RANDOM+1000))"
-	local username="u${userid}"
-
-	addgroup --quiet --gid "$userid" "$username"
-	adduser \
-		--shell /bin/bash \
-		--disabled-password \
-		--force-badname \
-		--no-create-home \
-		--uid "$userid" \
-		--gid "$userid" \
-		--gecos '' \
-		--quiet \
-		--home "$app_path" \
-		"$username"
-
-	unprivileged_user="$username"
-	unprivileged_group="$username"
 }
 
 herokuish-test() {

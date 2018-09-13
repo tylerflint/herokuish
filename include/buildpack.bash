@@ -21,16 +21,6 @@ _envfile-parse() {
     done <<< "$(cat)"
 }
 
-_move-build-to-app() {
-	shopt -s dotglob nullglob
-	# shellcheck disable=SC2086
-	rm -rf ${app_path:?}/*
-	#  build_path defined in outer scope
-	# shellcheck disable=SC2086,SC2154
-	mv $build_path/* $app_path
-	shopt -u dotglob nullglob
-}
-
 _select-buildpack() {
 	if [[ -n "$BUILDPACK_URL" ]]; then
 		title "Fetching custom buildpack"
@@ -41,15 +31,13 @@ _select-buildpack() {
 
 		IFS='#' read -r url commit <<< "$BUILDPACK_URL"
 		buildpack-install "$url" "$commit" custom &> /dev/null
-		# unprivileged_user & unprivileged_group defined in outer scope
 		# shellcheck disable=SC2154
-		chown -R "$unprivileged_user:$unprivileged_group" "$buildpack_path/custom"
-		selected_name="$(unprivileged "$selected_path/bin/detect" "$build_path" || true)"
+		selected_name="$("$selected_path/bin/detect" "$app_path" || true)"
 	else
 		local buildpacks=($buildpack_path/*)
 		local valid_buildpacks=()
 		for buildpack in "${buildpacks[@]}"; do
-			unprivileged "$buildpack/bin/detect" "$build_path" &> /dev/null \
+			"$buildpack/bin/detect" "$app_path" &> /dev/null \
 				&& valid_buildpacks+=("$buildpack")
 		done
 		if [[ ${#valid_buildpacks[@]} -gt 1 ]]; then
@@ -58,7 +46,7 @@ _select-buildpack() {
 		fi
 		if [[ ${#valid_buildpacks[@]} -gt 0 ]]; then
 			selected_path="${valid_buildpacks[0]}"
-			selected_name=$(unprivileged "$selected_path/bin/detect" "$build_path")
+			selected_name=$("$selected_path/bin/detect" "$app_path")
 		fi
 	fi
 	if [[ "$selected_path" ]] && [[ "$selected_name" ]]; then
@@ -72,7 +60,6 @@ _select-buildpack() {
 buildpack-build() {
 	declare desc="Build an application using installed buildpacks"
 	ensure-paths
-	[[ "$USER" ]] || randomize-unprivileged
 	buildpack-setup > /dev/null
 	buildpack-execute | indent
 	procfile-types | indent
@@ -147,22 +134,7 @@ buildpack-setup() {
 	export HOME="$app_path"
 	export REQUEST_ID="build-$RANDOM"
 	export STACK="${STACK:-heroku-16}"
-	# build_path defined in outer scope
 	# shellcheck disable=SC2154
-	cp -r "$app_path/." "$build_path"
-
-	# Prepare dropped privileges
-	# unprivileged_user defined in outer scope
-	# shellcheck disable=SC2154
-	usermod --home "$HOME" "$unprivileged_user" > /dev/null 2>&1
-	# vars defined in outer scope
-	# shellcheck disable=SC2154
-	chown -R "$unprivileged_user:$unprivileged_group" \
-		"$app_path" \
-		"$build_path" \
-		"$cache_path" \
-		"$env_path" \
-		"$buildpack_path"
 
 	# Useful settings / features
 	export CURL_CONNECT_TIMEOUT="30"
@@ -177,31 +149,29 @@ buildpack-setup() {
 
 buildpack-execute() {
 	_select-buildpack
-	cd "$build_path" || return 1
-	unprivileged "$selected_path/bin/compile" "$build_path" "$cache_path" "$env_path"
+	cd "$app_path" || return 1
+	"$selected_path/bin/compile" "$app_path" "$cache_path" "$env_path"
 	if [[ -f "$selected_path/bin/release" ]]; then
-		unprivileged "$selected_path/bin/release" "$build_path" "$cache_path" > "$build_path/.release"
+		"$selected_path/bin/release" "$app_path" "$cache_path" > "$app_path/.release"
 	fi
-	if [[ -f "$build_path/.release" ]]; then
-		config_vars="$(cat "$build_path/.release" | yaml-get config_vars)"
+	if [[ -f "$app_path/.release" ]]; then
+		config_vars="$(cat "$app_path/.release" | yaml-get config_vars)"
 		if [[ "$config_vars" ]]; then
-			mkdir -p "$build_path/.profile.d"
+			mkdir -p "$app_path/.profile.d"
 			OIFS=$IFS
 			IFS=$'\n'
 			for var in $config_vars; do
-				echo "export $(echo "$var" | sed -e 's/=/="/' -e 's/$/"/')" >> "$build_path/.profile.d/00_config_vars.sh"
+				echo "export $(echo "$var" | sed -e 's/=/="/' -e 's/$/"/')" >> "$app_path/.profile.d/00_config_vars.sh"
 			done
 			IFS=$OIFS
 		fi
 	fi
 	cd - > /dev/null || return 1
-	_move-build-to-app
 }
 
 buildpack-test() {
 	declare desc="Build and run tests for an application using installed buildpacks"
 	ensure-paths
-	[[ "$USER" ]] || randomize-unprivileged
 	buildpack-setup > /dev/null
 	_select-buildpack
 
@@ -210,13 +180,12 @@ buildpack-test() {
 		exit 1
 	fi
 
-	cd "$build_path" || return 1
+	cd "$app_path" || return 1
 	chmod 755 "$selected_path/bin/test-compile"
-	unprivileged "$selected_path/bin/test-compile" "$build_path" "$cache_path" "$env_path"
+	"$selected_path/bin/test-compile" "$app_path" "$cache_path" "$env_path"
 
 	cd "$app_path" || return 1
-	_move-build-to-app
 	procfile-load-profile
 	chmod 755 "$selected_path/bin/test"
-	unprivileged "$selected_path/bin/test" "$app_path" "$env_path"
+	"$selected_path/bin/test" "$app_path" "$env_path"
 }
