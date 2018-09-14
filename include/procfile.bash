@@ -95,8 +95,7 @@ procfile-load-profile() {
 	# that were set when the container was started. - We don't
 	# want the buildpack to bulldoze those.
 	# (PATH is ok to bulldoze though)
-	env | grep -Ev 'PATH'
-		> /etc/default_profile.sh
+	env | grep -Ev 'PATH' | sed -e 's/^/export /;' > /etc/default_profile.sh
 	
 	shopt -s nullglob
 	for file in /etc/profile.d/*.sh; do
