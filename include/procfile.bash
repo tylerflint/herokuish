@@ -94,8 +94,11 @@ procfile-load-profile() {
 	# export the current session, which includes custom evars
 	# that were set when the container was started. - We don't
 	# want the buildpack to bulldoze those.
-	# (PATH is ok to bulldoze though)
-	env | grep -Ev 'PATH' | sed -e 's/^/export /;' > /etc/default_profile.sh
+	# (a few are ok to bulldoze though)
+	env \
+		| grep -Ev 'PATH|PS1|TERM|SELF|SHLVL|PWD' \
+		| sed -e 's/^/export /;' \
+		> /etc/default_profile.sh
 	
 	shopt -s nullglob
 	for file in /etc/profile.d/*.sh; do
